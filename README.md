@@ -9,7 +9,7 @@ The database used is Cassandra, and using `docker compose up` will bring up Cass
 by default will write to a `./data` directory as a volume mapped to `/opt/cassandra/data` in the container. 
 If you want to clear out the data in the tables between runs to avoid duplicates being blocked, you'll need to drop the tables with a cassandra client or delete 
 the `./data` directory.
----
+
 If the `cmd/scanner/main` is running via docker-compose, you should start to see this kind of log:
 
 ```
