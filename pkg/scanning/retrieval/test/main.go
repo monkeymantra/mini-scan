@@ -12,9 +12,9 @@ import (
 
 func main() {
 	clusterIp := flag.String("cassandra", "127.0.0.1", "Cluster IP")
-	ip := flag.String("ip", "1.1.1.73", "IP to query")
-	port := flag.Int("port", 31009, "Port to query")
-	service := flag.String("service", "DNS", "Service to query")
+	ip := flag.String("ip", "192.168.1.1", "IP to query")
+	port := flag.Int("port", 80, "Port to query")
+	service := flag.String("service", "http", "Service to query")
 	flag.Parse()
 
 	// Create a Cassandra cluster and session.
