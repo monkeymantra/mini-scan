@@ -13,10 +13,23 @@ import (
 )
 
 const (
-	cqlSelectVersionQuery = `SELECT version FROM version_counter WHERE ip = ? AND port = ? AND service = ? AND timestamp = ?`
-	cqlUpdateVersionQuery = `UPDATE version_counter SET version = version + 1 WHERE ip = ? AND port = ? AND service = ? AND timestamp = ?`
-	cqlInsertScanQuery    = `INSERT INTO scans (ip, port, service, timestamp, version, data) VALUES (?, ?, ?, ?, ?, ?) IF NOT EXISTS`
-	cqlSelectLatestQuery  = `SELECT ip, port, service, timestamp, version, data FROM scans WHERE ip = ? AND port = ? AND service = ? ORDER BY version DESC LIMIT 1`
+	// Insert a new row into version_counter if one with the given timestamp doesn't exist.
+	cqlInsertVersionQuery = `INSERT INTO version_counter (ip, port, service, version, timestamp) VALUES (?, ?, ?, ?, ?) IF NOT EXISTS`
+
+	// Select the version for a given (ip, port, service, timestamp) to check for duplicates.
+	cqlSelectVersionQuery = `SELECT version FROM version_counter WHERE ip = ? AND port = ? AND service = ? AND timestamp = ? ALLOW FILTERING`
+
+	// Select the highest version for a given (ip, port, service) (ordered by version descending).
+	cqlSelectLatestVersionQuery = `SELECT version FROM version_counter WHERE ip = ? AND port = ? AND service = ? ORDER BY version DESC LIMIT 1 ALLOW FILTERING`
+
+	// Insert a new scan record into scans if one with the same (ip, port, service, version) doesn't exist.
+	cqlInsertScanQuery = `INSERT INTO scans (ip, port, service, timestamp, version, data) VALUES (?, ?, ?, ?, ?, ?)`
+
+	// Retrieve the latest scan record.
+	cqlSelectLatestQuery = `SELECT ip, port, service, timestamp, version, data FROM scans WHERE ip = ? AND port = ? AND service = ? ORDER BY version DESC LIMIT 1 ALLOW FILTERING`
+
+	// Retrieve a specific scan by version.
+	cqlSelectScanQuery = `SELECT ip, port, service, timestamp, version, data FROM scans WHERE ip = ? AND port = ? AND service = ? AND version = ? ALLOW FILTERING`
 )
 
 // RunWithBackoff runs the provided operation (which returns a value of type T and an error)
@@ -79,76 +92,123 @@ func NewScanRepository(session *gocql.Session, timeout time.Duration) *ScanRepos
 	}
 }
 
-// CheckNoExistingVersion checks whether there is no existing version_counter row
-// for the given key (ip, port, service, ts). It returns true if no row exists, and false if one exists.
-func (repo *ScanRepository) CheckExistingVersion(ctx context.Context, ip string, port uint32, service string, ts int64) (bool, error) {
-	log.Printf("Checking existing version for service %s and ip %s and port %d and timestamp %d", service, ip, port, ts)
+// CheckForDuplicateTimestamp checks whether there is already a version_counter row for the given (ip, port, service, ts).
+func (repo *ScanRepository) CheckForDuplicateTimestamp(ctx context.Context, ip string, port uint32, service string, ts int64) (bool, error) {
 	op := func() (bool, error) {
 		var version int
-		err := repo.session.Query(cqlSelectVersionQuery, ip, int(port), service, ts).WithContext(ctx).Scan(&version)
+		err := repo.session.Query(cqlSelectVersionQuery, ip, int(port), service, ts).
+			WithContext(ctx).Consistency(gocql.Quorum).Scan(&version)
 		if err == gocql.ErrNotFound {
-			log.Printf("Version checked: %d", version)
-			// No row exists
-			return false, nil
+			return false, nil // No duplicate.
 		} else if err != nil {
-			return false, fmt.Errorf("error checking version_counter: %v", err)
+			return false, fmt.Errorf("error checking for duplicate timestamp: %v", err)
 		}
-		log.Printf("Version already exists")
-		// Row exists
-		return true, nil
+		return true, nil // Duplicate exists.
 	}
-	return RunWithBackoff[bool](ctx, op, repo.timeout)
-}
-
-// UpdateVersionAndInsertScan updates the version_counter row and inserts the scan record.
-func (repo *ScanRepository) UpdateVersionAndInsertScan(ctx context.Context, ip string, port uint32, service string, ts int64, data string) (int, error) {
-	op := func() (int, error) {
-		// Step 1: Increment the version
-		if err := repo.session.Query(cqlUpdateVersionQuery, ip, int(port), service, ts).WithContext(ctx).Exec(); err != nil {
-			return 0, fmt.Errorf("update version_counter error: %v", err)
-		}
-
-		// Step 2: Fetch the latest version
-		var version int
-		if err := repo.session.Query(cqlSelectVersionQuery, ip, int(port), service, ts).
-			WithContext(ctx).Scan(&version); err != nil {
-			return 0, fmt.Errorf("select version_counter error: %v", err)
-		}
-
-		// Step 3: Insert the scan record (Only if not already inserted)
-		currentTs := time.Now().UnixMilli()
-		if err := repo.session.Query(cqlInsertScanQuery, ip, int(port), service, currentTs, version, data).
-			WithContext(ctx).Exec(); err != nil {
-			return 0, fmt.Errorf("insert scan error: %v", err)
-		}
-
-		log.Printf("Inserted scan: %d", version)
-		return version, nil
-	}
-
 	return RunWithBackoff(ctx, op, repo.timeout)
 }
 
-// InsertScan is the high-level function that first ensures the version_counter row is created
-// and then updates it and inserts the scan record.
-// One thing that's very different is that my repo stores the scan at multiple versions.
-func (repo *ScanRepository) InsertScan(ctx context.Context, ip string, port uint32, service string, ts int64, data string) (int, error) {
-	// Ensure the version row exists first.
-	if err := repo.EnsureVersionCounter(ctx, ip, port, service, ts); err != nil {
-		return 0, err
+// GetCurrentVersion retrieves the highest version for (ip, port, service) by ordering on version descending.
+func (repo *ScanRepository) GetCurrentVersion(ctx context.Context, ip string, port uint32, service string) (int, error) {
+	op := func() (int, error) {
+		var version int
+		err := repo.session.Query(cqlSelectLatestVersionQuery, ip, int(port), service).
+			WithContext(ctx).Consistency(gocql.Quorum).Scan(&version)
+		if err == gocql.ErrNotFound {
+			return 0, nil // No version exists yet.
+		} else if err != nil {
+			return 0, fmt.Errorf("error selecting current version: %v", err)
+		}
+		return version, nil
 	}
-	// Update the version and insert the scan.
+	return RunWithBackoff(ctx, op, repo.timeout)
+}
+
+// EnsureVersionCounter ensures that there is no existing version_counter row for the given (ip, port, service, ts).
+// It uses an INSERT IF NOT EXISTS query to create a new row with the provided timestamp and version.
+// If a row with the same timestamp exists, it returns an error.
+func (repo *ScanRepository) EnsureVersionCounter(ctx context.Context, ip string, port uint32, service string, ts int64, version int) error {
+	op := func() (bool, error) {
+		m := make(map[string]interface{})
+		// Use INSERT ... IF NOT EXISTS with the provided version.
+		applied, err := repo.session.Query(cqlInsertVersionQuery, ip, int(port), service, version, ts).
+			WithContext(ctx).Consistency(gocql.Quorum).MapScanCAS(m)
+		if err != nil {
+			return false, fmt.Errorf("version_counter insert error: %v", err)
+		}
+		if !applied {
+			return false, fmt.Errorf("version_counter row already exists for key (%s, %d, %s) at timestamp %d; existing data: %v", ip, port, service, ts, m)
+		}
+		return true, nil
+	}
+	_, err := RunWithBackoff(ctx, op, repo.timeout)
+	return err
+}
+
+// UpdateVersionAndInsertScan retrieves the current highest version, then uses that to compute a new version.
+// It then ensures no duplicate timestamp exists, inserts a new version_counter row with the new version and provided timestamp,
+// and finally inserts a new scan record into the scans table.
+func (repo *ScanRepository) UpdateVersionAndInsertScan(ctx context.Context, ip string, port uint32, service string, ts int64, data string) (int, error) {
+	op := func() (int, error) {
+		// Step 1: Get current highest version.
+		currentVersion, err := repo.GetCurrentVersion(ctx, ip, port, service)
+		if err != nil {
+			return 0, fmt.Errorf("error retrieving current version: %v", err)
+		}
+		newVersion := currentVersion + 1
+
+		// Step 2: Ensure that no row exists with the same timestamp.
+		dup, err := repo.CheckForDuplicateTimestamp(ctx, ip, port, service, ts)
+		if err != nil {
+			return 0, err
+		}
+		if dup {
+			return 0, fmt.Errorf("a version_counter entry for key (%s, %d, %s) at timestamp %d already exists", ip, port, service, ts)
+		}
+
+		// Step 3: Insert the new version_counter row for this timestamp.
+		if err := repo.EnsureVersionCounter(ctx, ip, port, service, ts, newVersion); err != nil {
+			return 0, err
+		}
+
+		// Step 4: Insert the scan record into scans.
+		if err := repo.session.Query(cqlInsertScanQuery, ip, int(port), service, ts, newVersion, data).
+			WithContext(ctx).Consistency(gocql.Quorum).Exec(); err != nil {
+			return 0, fmt.Errorf("error inserting scan record: %v", err)
+		}
+		log.Printf("Inserted scan for key (%s, %d, %s) with timestamp %d and version %d", ip, port, service, ts, newVersion)
+		return newVersion, nil
+	}
+	return RunWithBackoff(ctx, op, repo.timeout)
+}
+
+// InsertScan is the high-level method that inserts a new scan record if no duplicate exists for the given (ip, port, service, ts).
+// It computes the new version (current highest + 1) and then calls UpdateVersionAndInsertScan.
+func (repo *ScanRepository) InsertScan(ctx context.Context, ip string, port uint32, service string, ts int64, data string) (int, error) {
+	// Check for duplicate timestamp in version_counter.
+	var dummy int
+	err := repo.session.Query(cqlSelectVersionQuery, ip, int(port), service, ts).
+		WithContext(ctx).Consistency(gocql.Quorum).Scan(&dummy)
+	if err != nil && err != gocql.ErrNotFound {
+		return 0, fmt.Errorf("error checking for existing version row: %v", err)
+	}
+	if err == nil {
+		return 0, fmt.Errorf("an entry for key (%s, %d, %s) at timestamp %d already exists", ip, port, service, ts)
+	}
+
+	// Otherwise, update version and insert the scan record.
 	return repo.UpdateVersionAndInsertScan(ctx, ip, port, service, ts, data)
 }
 
-// GetLatestScan retrieves the latest scan record for the given key.
+// GetLatestScan retrieves the latest scan record for the given (ip, port, service).
 func (repo *ScanRepository) GetLatestScan(ctx context.Context, ip string, port uint32, service string) (*types.ScanResponse, error) {
 	op := func() (interface{}, error) {
 		var scan types.ScanResponse
-		err := repo.session.Query(cqlSelectLatestQuery, ip, int(port), service).Scan(
+		err := repo.session.Query(cqlSelectLatestQuery, ip, int(port), service).
+			WithContext(ctx).Consistency(gocql.Quorum).Scan(
 			&scan.Ip, &scan.Port, &scan.Service, &scan.Timestamp, &scan.Version, &scan.Data)
 		if err != nil {
-			return nil, fmt.Errorf("select latest error: %v", err)
+			return nil, fmt.Errorf("error selecting latest scan: %v", err)
 		}
 		return &scan, nil
 	}
