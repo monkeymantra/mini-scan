@@ -17,6 +17,7 @@ type Scan struct {
 	Data        string `json:"data"`
 }
 
+// This was something I was considering for respose as it contains the Version of the data as well as the DataVersion
 type ScanResponse struct {
 	Ip          string `json:"ip"`
 	Port        uint32 `json:"port"`
