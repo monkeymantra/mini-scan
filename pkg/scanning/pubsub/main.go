@@ -65,7 +65,7 @@ func main() {
 		Service:     "http",
 		Timestamp:   time.Now().UnixMilli(),
 		DataVersion: 0,
-		Data:        `{"key": "test-value"}`,
+		Data:        `{"response_str": "hello world"}`,
 	}
 
 	// Publish the test Scan to the topic.
