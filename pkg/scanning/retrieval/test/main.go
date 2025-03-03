@@ -41,7 +41,7 @@ func main() {
 
 	// Insert a new scan.
 	data := "hello world!"
-	version, err := repo.InsertScan(ctx, "192.168.1.1", 80, "http", ts, data)
+	version, err := repo.InsertScan(ctx, "192.168.1.2", 80, "http", ts, data)
 	if err != nil {
 		log.Printf("InsertScan error: %v", err)
 	} else {
@@ -49,15 +49,7 @@ func main() {
 	}
 
 	// Attempt a duplicate insert (should return an error).
-	_, err = repo.InsertScan(ctx, "192.168.1.1", 80, "http", ts, data)
-	if err != nil {
-		log.Printf("Duplicate insert correctly not allowed: %v", err)
-	} else {
-		log.Printf("Unexpected: duplicate insert succeeded!")
-	}
-
-	// Attempt an insert of a new version
-	_, err = repo.InsertScan(ctx, "192.168.1.1", 80, "http", ts, data)
+	_, err = repo.InsertScan(ctx, "192.168.1.2", 80, "http", ts, data)
 	if err != nil {
 		log.Printf("Duplicate insert correctly not allowed: %v", err)
 	} else {
@@ -72,19 +64,29 @@ func main() {
 		fmt.Printf("Latest scan: %+v\n", latest)
 	}
 
-	d := 1 * time.Second
-	newT := time.Now().Add(d).UnixMilli()
+	newT := time.Now().Add(time.Second)
+	newTt := newT.Add(1 * time.Second)
+	log.Printf("Attempting to insert with new time")
 
 	// Attempt an insert of a new version
-	_, err = repo.InsertScan(ctx, "192.168.1.1", 80, "http", newT, data)
+	_, err = repo.InsertScan(ctx, "192.168.1.1", 80, "http", newT.UnixMilli(), data)
 	if err != nil {
-		log.Printf("Duplicate insert correctly not allowed: %v", err)
+		log.Printf("InsertScan error: %v", err)
 	} else {
-		log.Printf("Unexpected: duplicate insert succeeded!")
+		log.Printf(" insert with version 1 succeeded!")
+	}
+	log.Printf("Attempting to insert with new time")
+
+	// Attempt an insert of a new version
+	_, err = repo.InsertScan(ctx, "192.168.1.1", 80, "http", newTt.UnixMilli(), data)
+	if err != nil {
+		log.Printf("InsertScan error: %v", err)
+	} else {
+		log.Printf("Unexpected: insert with version 2 succeeded!")
 	}
 
 	// Attempt an insert of a new version
-	newLatest, err := repo.GetLatestScan(ctx, "192.168.1.1", 80, "http")
+	newLatest, err := repo.GetLatestScan(ctx, "192.168.1.", 80, "http")
 	if err != nil {
 		log.Printf("GetLatestScan error: %v", err)
 	} else {

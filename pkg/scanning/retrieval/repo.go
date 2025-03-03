@@ -163,7 +163,7 @@ func (repo *ScanRepository) GetLatestScan(ctx context.Context, ip string, port u
 	return result.(*types.ScanResponse), nil
 }
 
-// GetLatestScan retrieves the latest scan record for the given key.
+// GetScan retrieves the latest scan record for the given key given a version number
 func (repo *ScanRepository) GetScan(ctx context.Context, ip string, port uint32, service string, version int) (*types.ScanResponse, error) {
 	log.Printf("Getting scan for service %s and version %d", service, version)
 	op := func() (interface{}, error) {

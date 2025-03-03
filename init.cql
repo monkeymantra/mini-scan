@@ -29,6 +29,6 @@ CREATE TABLE IF NOT EXISTS version_counter (
                                  service TEXT,
                                  version COUNTER,
                                  timestamp BIGINT,
-                                 PRIMARY KEY ((ip, port, service), timestamp)) WITH CLUSTERING ORDER BY (timestamp DESC);
+                                 PRIMARY KEY (ip, port, service, timestamp)) WITH CLUSTERING ORDER BY (timestamp DESC));
 
 
