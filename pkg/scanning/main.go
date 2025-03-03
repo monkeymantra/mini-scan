@@ -123,7 +123,7 @@ func main() {
 	timeout := flag.Duration("timeout", 3*time.Second, "Timeout")
 
 	flag.Parse()
-	// Set up the environment so you can get pubsub from local test
+	// Set up the environment so you can
 	os.Setenv("PUBSUB_EMULATOR_HOST", "localhost:8085")
 	// Set up Cassandra session.
 	cluster := gocql.NewCluster(*clusterIp)

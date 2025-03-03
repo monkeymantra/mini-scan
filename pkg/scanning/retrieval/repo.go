@@ -54,7 +54,7 @@ type ScanRepositoryInterface interface {
 	// updates it, and then inserts the scan record.
 	InsertScan(ctx context.Context, ip string, port uint32, service string, ts int64, data string) (int, error)
 
-	GetLatestScan(ctx context.Context, ip string, port uint32, service string) (*types.Scan, error)
+	GetLatestScan(ctx context.Context, ip string, port uint32, service string) (*types.ScanResponse, error)
 }
 
 // ScanRepository is our concrete implementation that satisfies ScanRepositoryInterface.
