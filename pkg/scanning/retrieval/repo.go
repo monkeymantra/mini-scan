@@ -13,12 +13,10 @@ import (
 )
 
 const (
-	cqlInsertVersionQuery = `INSERT INTO version_counter (ip, port, service, timestamp, version) VALUES (?, ?, ?, ?, 0) IF NOT EXISTS`
 	cqlSelectVersionQuery = `SELECT version FROM version_counter WHERE ip = ? AND port = ? AND service = ? AND timestamp = ?`
 	cqlUpdateVersionQuery = `UPDATE version_counter SET version = version + 1 WHERE ip = ? AND port = ? AND service = ? AND timestamp = ?`
 	cqlInsertScanQuery    = `INSERT INTO scans (ip, port, service, timestamp, version, data) VALUES (?, ?, ?, ?, ?, ?) IF NOT EXISTS`
 	cqlSelectLatestQuery  = `SELECT ip, port, service, timestamp, version, data FROM scans WHERE ip = ? AND port = ? AND service = ? ORDER BY version DESC LIMIT 1`
-	cqlSelectQuery        = `SELECT ip, port, service, timestamp, version, data FROM scans WHERE ip = ? AND port = ? AND service = ? AND version = ?`
 )
 
 // RunWithBackoff runs the provided operation (which returns a value of type T and an error)
