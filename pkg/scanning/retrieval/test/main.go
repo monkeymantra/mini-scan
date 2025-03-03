@@ -41,7 +41,7 @@ func main() {
 
 	// Insert a new scan.
 	data := "hello world!"
-	version, err := repo.InsertScan(ctx, "192.168.1.2", 80, "http", ts, data)
+	version, err := repo.InsertScan(ctx, *ip, uint32(*port), *service, ts, data)
 	if err != nil {
 		log.Printf("InsertScan error: %v", err)
 	} else {
@@ -49,7 +49,7 @@ func main() {
 	}
 
 	// Attempt a duplicate insert (should return an error).
-	_, err = repo.InsertScan(ctx, "192.168.1.2", 80, "http", ts, data)
+	_, err = repo.InsertScan(ctx, *ip, uint32(*port), *service, ts, data)
 	if err != nil {
 		log.Printf("Duplicate insert correctly not allowed: %v", err)
 	} else {
@@ -57,47 +57,11 @@ func main() {
 	}
 
 	// Retrieve the latest scan.
-	latest, err := repo.GetLatestScan(ctx, "192.168.1.2", 80, "http")
+	latest, err := repo.GetLatestScan(ctx, *ip, uint32(*port), *service)
 	if err != nil {
 		log.Printf("GetLatestScan error: %v", err)
 	} else {
 		fmt.Printf("Latest scan: %+v\n", latest)
 	}
 
-	newT := time.Now().Add(time.Second)
-	newTt := newT.Add(1 * time.Second)
-	log.Printf("Attempting to insert with new time")
-
-	// Attempt an insert of a new version
-	_, err = repo.InsertScan(ctx, "192.168.1.1", 80, "http", newT.UnixMilli(), data)
-	if err != nil {
-		log.Printf("InsertScan error: %v", err)
-	} else {
-		log.Printf(" insert with version 1 succeeded!")
-	}
-	log.Printf("Attempting to insert with new time")
-
-	// Attempt an insert of a new version
-	_, err = repo.InsertScan(ctx, "192.168.1.1", 80, "http", newTt.UnixMilli(), data)
-	if err != nil {
-		log.Printf("InsertScan error: %v", err)
-	} else {
-		log.Printf("Unexpected: insert with version 2 succeeded!")
-	}
-
-	// Attempt an insert of a new version
-	newLatest, err := repo.GetLatestScan(ctx, "192.168.1.", 80, "http")
-	if err != nil {
-		log.Printf("GetLatestScan error: %v", err)
-	} else {
-		fmt.Printf("Latest scan: %+v\n", newLatest)
-	}
-	log.Printf("Getting Version 1 scan")
-	// Retrieve the latest scan for a particular ip, port, service
-	latestSecond, err := repo.GetScan(ctx, *ip, uint32(*port), *service, 1)
-	if err != nil {
-		log.Printf("GetLatestScan error: %v", err)
-	} else {
-		fmt.Printf("Get Scan Version %d scan: %+v\n", latestSecond.Version, latestSecond)
-	}
 }
