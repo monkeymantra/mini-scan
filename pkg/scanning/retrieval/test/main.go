@@ -37,11 +37,11 @@ func main() {
 	defer cancel()
 
 	// Use a fixed timestamp for deduplication/version_counter.
-	ts := time.Now().UnixMilli()
+	ts := time.Now()
 
 	// Insert a new scan.
 	data := "hello world!"
-	version, err := repo.InsertScan(ctx, *ip, uint32(*port), *service, ts, data)
+	version, err := repo.InsertScan(ctx, *ip, uint32(*port), *service, ts.UnixMilli(), data)
 	if err != nil {
 		log.Printf("InsertScan error: %v", err)
 	} else {
@@ -49,11 +49,28 @@ func main() {
 	}
 
 	// Attempt a duplicate insert (should return an error).
-	_, err = repo.InsertScan(ctx, *ip, uint32(*port), *service, ts, data)
+	_, err = repo.InsertScan(ctx, *ip, uint32(*port), *service, ts.UnixMilli(), data)
 	if err != nil {
 		log.Printf("Duplicate insert correctly not allowed: %v", err)
 	} else {
 		log.Printf("Unexpected: duplicate insert succeeded!")
+	}
+
+	newTs := time.Now().Add(1 * time.Hour)
+	secondNewTs := newTs.Add(1 * time.Hour)
+
+	version, err = repo.InsertScan(ctx, *ip, uint32(*port), *service, newTs.UnixMilli(), data)
+	if err != nil {
+		log.Printf("InsertScan error: %v", err)
+	} else {
+		log.Printf("Inserted scan with version: %d", version)
+	}
+
+	version, err = repo.InsertScan(ctx, *ip, uint32(*port), *service, secondNewTs.UnixMilli(), data)
+	if err != nil {
+		log.Printf("InsertScan error: %v", err)
+	} else {
+		log.Printf("Inserted scan with version: %d", version)
 	}
 
 	// Retrieve the latest scan.
