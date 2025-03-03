@@ -56,19 +56,46 @@ func main() {
 		log.Printf("Unexpected: duplicate insert succeeded!")
 	}
 
+	// Attempt an insert of a new version
+	_, err = repo.InsertScan(ctx, "192.168.1.1", 80, "http", ts, data)
+	if err != nil {
+		log.Printf("Duplicate insert correctly not allowed: %v", err)
+	} else {
+		log.Printf("Unexpected: duplicate insert succeeded!")
+	}
+
 	// Retrieve the latest scan.
-	latest, err := repo.GetLatestScan(ctx, "192.168.1.1", 80, "http")
+	latest, err := repo.GetLatestScan(ctx, "192.168.1.2", 80, "http")
 	if err != nil {
 		log.Printf("GetLatestScan error: %v", err)
 	} else {
 		fmt.Printf("Latest scan: %+v\n", latest)
 	}
 
-	// Retrieve the latest scan.
-	latestPrevious, err := repo.GetLatestScan(ctx, *ip, uint32(*port), *service)
+	d := 1 * time.Second
+	newT := time.Now().Add(d).UnixMilli()
+
+	// Attempt an insert of a new version
+	_, err = repo.InsertScan(ctx, "192.168.1.1", 80, "http", newT, data)
+	if err != nil {
+		log.Printf("Duplicate insert correctly not allowed: %v", err)
+	} else {
+		log.Printf("Unexpected: duplicate insert succeeded!")
+	}
+
+	// Attempt an insert of a new version
+	newLatest, err := repo.GetLatestScan(ctx, "192.168.1.1", 80, "http")
 	if err != nil {
 		log.Printf("GetLatestScan error: %v", err)
 	} else {
-		fmt.Printf("Latest scan: %+v\n", latestPrevious)
+		fmt.Printf("Latest scan: %+v\n", newLatest)
+	}
+	log.Printf("Getting Version 1 scan")
+	// Retrieve the latest scan for a particular ip, port, service
+	latestSecond, err := repo.GetScan(ctx, *ip, uint32(*port), *service, 1)
+	if err != nil {
+		log.Printf("GetLatestScan error: %v", err)
+	} else {
+		fmt.Printf("Get Scan Version %d scan: %+v\n", latestSecond.Version, latestSecond)
 	}
 }

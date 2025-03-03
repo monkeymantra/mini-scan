@@ -17,6 +17,7 @@ const (
 	cqlSelectVersionQuery = `SELECT version FROM version_counter WHERE ip = ? AND port = ? AND service = ? AND timestamp = ?`
 	cqlInsertScanQuery    = `INSERT INTO scans (ip, port, service, timestamp, version, data) VALUES (?, ?, ?, ?, ?, ?) IF NOT EXISTS`
 	cqlSelectLatestQuery  = `SELECT ip, port, service, timestamp, version, data FROM scans WHERE ip = ? AND port = ? AND service = ? ORDER BY version DESC LIMIT 1`
+	cqlSelectQuery        = `SELECT ip, port, service, timestamp, version, data FROM scans WHERE ip = ? AND port = ? AND service = ? AND version = ?`
 )
 
 // RunWithBackoff runs the provided operation (which returns a value of type T and an error)
@@ -113,10 +114,13 @@ func (repo *ScanRepository) UpdateVersionAndInsertScan(ctx context.Context, ip s
 		if err := repo.session.Query(cqlSelectVersionQuery, ip, int(port), service, ts).Scan(&version); err != nil {
 			return 0, fmt.Errorf("select version_counter error: %v", err)
 		}
+		log.Printf("Version updated: %d", version)
 		// Insert the scan record.
 		currentTs := time.Now().UnixMilli()
 		if err := repo.session.Query(cqlInsertScanQuery, ip, int(port), service, currentTs, version, data).Exec(); err != nil {
 			return 0, fmt.Errorf("insert scan error: %v", err)
+		} else {
+			log.Printf("Inserted scan: %d", version)
 		}
 		return version, nil
 	}
@@ -142,11 +146,11 @@ func (repo *ScanRepository) InsertScan(ctx context.Context, ip string, port uint
 }
 
 // GetLatestScan retrieves the latest scan record for the given key.
-func (repo *ScanRepository) GetLatestScan(ctx context.Context, ip string, port uint32, service string) (*types.Scan, error) {
+func (repo *ScanRepository) GetLatestScan(ctx context.Context, ip string, port uint32, service string) (*types.ScanResponse, error) {
 	op := func() (interface{}, error) {
-		var scan types.Scan
+		var scan types.ScanResponse
 		err := repo.session.Query(cqlSelectLatestQuery, ip, int(port), service).Scan(
-			&scan.Ip, &scan.Port, &scan.Service, &scan.Timestamp, &scan.DataVersion, &scan.Data)
+			&scan.Ip, &scan.Port, &scan.Service, &scan.Timestamp, &scan.Version, &scan.Data)
 		if err != nil {
 			return nil, fmt.Errorf("select latest error: %v", err)
 		}
@@ -156,5 +160,24 @@ func (repo *ScanRepository) GetLatestScan(ctx context.Context, ip string, port u
 	if err != nil {
 		return nil, err
 	}
-	return result.(*types.Scan), nil
+	return result.(*types.ScanResponse), nil
+}
+
+// GetLatestScan retrieves the latest scan record for the given key.
+func (repo *ScanRepository) GetScan(ctx context.Context, ip string, port uint32, service string, version int) (*types.ScanResponse, error) {
+	log.Printf("Getting scan for service %s and version %d", service, version)
+	op := func() (interface{}, error) {
+		var scan types.ScanResponse
+		err := repo.session.Query(cqlSelectQuery, ip, int(port), service, version).Scan(
+			&scan.Ip, &scan.Port, &scan.Service, &scan.Timestamp, &scan.Version, &scan.Data)
+		if err != nil {
+			return nil, fmt.Errorf("select latest error: %v", err)
+		}
+		return &scan, nil
+	}
+	result, err := RunWithBackoff(ctx, op, repo.timeout)
+	if err != nil {
+		return nil, err
+	}
+	return result.(*types.ScanResponse), nil
 }
