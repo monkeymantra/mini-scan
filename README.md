@@ -50,3 +50,7 @@ Redis might be appropriate if the size of the individual data stored were lower,
 is a pretty small example, and the response data could be much, much larger in the real world. Cassandra seems ideal
 for use in situations where the response size is much larger.
 
+I ran out of time before I implemented returning the data at multiple versions, and I think I may have mixed up
+the data_version and version, which is "V1/V2" versus "Which version of the data are we returning". I had meant to create
+a separate ScanResponse to return the Version of the data along with, but I didn't manage to finish.
+
